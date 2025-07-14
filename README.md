@@ -11,4 +11,8 @@ git clone https://github.com/ramin-0900/Lemon-Bot
 
 pip install -r requirements.txt
  uvicorn api.server:app --reload
+ cp .env.example .env
 ```
+## how to use
+
+****
