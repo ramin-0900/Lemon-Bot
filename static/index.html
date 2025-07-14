@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Discord Bot Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --theme-primary: #5865F2; --theme-green: #57F287; --theme-red: #ED4245; --text-light: #e5e7eb; --text-medium: #9ca3af; }
+    body { font-family: "Inter", "Segoe UI", sans-serif; background: #000; color: var(--text-light); }
+    #space-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+    .glass-panel { background: rgba(10, 15, 25, 0.5); border: 1px solid rgba(88, 101, 242, 0.2); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-radius: 16px; padding: 1.5rem 2rem; }
+    .status-indicator { box-shadow: 0 0 15px var(--color); }
+    .nav-btn { background-color: rgba(255, 255, 255, 0.1); transition: all 0.2s ease-in-out; }
+    .nav-btn.active, .nav-btn:hover { background-color: var(--theme-primary); color: white; box-shadow: 0 0 15px rgba(88, 101, 242, 0.5); }
+    .modal-backdrop { transition: opacity 0.3s ease; }
+    .modal-content { transition: transform 0.3s ease, opacity 0.3s ease; }
+    .hidden .modal-content { transform: scale(0.95); opacity: 0; }
+  </style>
+</head>
+<body class="flex flex-col items-center min-h-screen p-4">
+  <canvas id="space-canvas"></canvas>
+
+  <!-- Header -->
+  <header class="glass-panel w-full max-w-4xl mb-8">
+      <nav class="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <h1 class="text-2xl font-bold text-white">Bot Dashboard</h1>
+          <div class="flex items-center gap-2 p-1 rounded-full bg-black/20">
+              <a href="index.html" class="nav-btn active px-4 py-2 rounded-full text-sm font-semibold no-underline">Dashboard</a>
+              <a href="api-key.html" class="nav-btn px-4 py-2 rounded-full text-sm font-semibold no-underline">API Key</a>
+              <div class="nav-btn px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"></path></svg>
+                Servers: <span id="guild-count-header">-</span>
+              </div>
+          </div>
+      </nav>
+  </header>
+
+  <main class="w-full max-w-4xl mx-auto space-y-8">
+    <!-- Status and Controls Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Status Card -->
+        <div class="glass-panel flex flex-col items-center justify-center text-center">
+            <h2 class="text-xl font-bold mb-4">Bot Status</h2>
+            <div id="status-light" class="w-16 h-16 rounded-full transition-all duration-500 status-indicator flex items-center justify-center">
+                <div class="w-12 h-12 bg-black/30 rounded-full"></div>
+            </div>
+            <p id="status-text" class="mt-4 text-lg font-semibold transition-colors"></p>
+        </div>
+
+        <!-- Restart Card -->
+        <div class="glass-panel flex flex-col items-center justify-center text-center">
+            <h2 class="text-xl font-bold mb-4">Bot Control</h2>
+            <button id="restart-btn" class="w-full px-6 py-4 rounded-lg font-bold text-lg transition-all duration-300 ease-in-out text-white shadow-lg hover:shadow-xl transform hover:-translate-y-1">
+                Restart Bot
+            </button>
+            <p class="text-xs text-gray-500 mt-3">This will stop and start the bot process.</p>
+        </div>
+    </div>
+  </main>
+  
+  <!-- Confirmation Modal -->
+  <div id="confirmation-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 modal-backdrop">
+      <div class="modal-content glass-panel w-full max-w-md m-4 text-center">
+          <h3 id="modal-title" class="text-2xl font-bold mb-4"></h3>
+          <p id="modal-body" class="text-gray-300 mb-6"></p>
+          <div class="flex justify-center gap-4">
+              <button id="modal-cancel" class="px-8 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 transition-colors font-bold">Cancel</button>
+              <button id="modal-confirm" class="px-8 py-2 rounded-lg text-white transition-colors font-bold"></button>
+          </div>
+      </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const statusLight = document.getElementById('status-light');
+        const statusText = document.getElementById('status-text');
+        const guildCountHeader = document.getElementById('guild-count-header');
+        const restartBtn = document.getElementById('restart-btn');
+        const modal = document.getElementById('confirmation-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalConfirm = document.getElementById('modal-confirm');
+        const modalCancel = document.getElementById('modal-cancel');
+
+        const API_BASE_URL = window.location.origin;
+        const STATUS_ENDPOINT = `${API_BASE_URL}/status`;
+        const RESTART_ENDPOINT = `${API_BASE_URL}/restart`;
+
+        const updateStatusUI = (isRunning, guilds) => {
+            guildCountHeader.textContent = guilds;
+            if (isRunning) {
+                statusLight.style.backgroundColor = 'var(--theme-green)';
+                statusLight.style.setProperty('--color', 'var(--theme-green)');
+                statusText.textContent = 'Online';
+                statusText.style.color = 'var(--theme-green)';
+                restartBtn.style.backgroundColor = 'var(--theme-red)';
+                restartBtn.textContent = 'Restart Bot';
+            } else {
+                statusLight.style.backgroundColor = 'var(--theme-red)';
+                statusLight.style.setProperty('--color', 'var(--theme-red)');
+                statusText.textContent = 'Offline';
+                statusText.style.color = 'var(--theme-red)';
+                restartBtn.style.backgroundColor = 'var(--theme-green)';
+                restartBtn.textContent = 'Start Bot';
+            }
+        };
+        
+        const fetchStatus = async () => {
+            try {
+                const response = await fetch(STATUS_ENDPOINT);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                updateStatusUI(data.bot_running, data.guilds);
+            } catch (error) {
+                console.error("Error fetching status:", error);
+                updateStatusUI(false, 'N/A');
+                statusText.textContent = 'Connection Error';
+            }
+        };
+
+        const showModal = (title, body, confirmText, confirmColor, onConfirm) => {
+            modalTitle.textContent = title;
+            modalBody.textContent = body;
+            modalConfirm.textContent = confirmText;
+            modalConfirm.style.backgroundColor = `var(--theme-${confirmColor})`;
+            modal.classList.remove('hidden');
+            const newConfirmBtn = modalConfirm.cloneNode(true);
+            modalConfirm.parentNode.replaceChild(newConfirmBtn, modalConfirm);
+            newConfirmBtn.addEventListener('click', () => { onConfirm(); modal.classList.add('hidden'); });
+            modalCancel.onclick = () => modal.classList.add('hidden');
+        };
+
+        restartBtn.addEventListener('click', () => {
+            showModal(
+                'Confirm Restart',
+                'Are you sure you want to restart the bot? This might take a moment.',
+                'Yes, Restart',
+                'red',
+                async () => {
+                    restartBtn.disabled = true;
+                    restartBtn.textContent = 'Sending command...';
+                    try {
+                        const response = await fetch(RESTART_ENDPOINT, { method: 'POST' });
+                        if (!response.ok) throw new Error('Failed to send restart command.');
+                        alert('Restart command sent successfully. Please wait a moment for the status to update.');
+                    } catch (error) {
+                        alert(`Error: ${error.message}`);
+                    }
+                    setTimeout(() => { fetchStatus(); restartBtn.disabled = false; }, 3000);
+                }
+            );
+        });
+
+        fetchStatus();
+        setInterval(fetchStatus, 5000);
+    });
+    // --- Canvas Animation Script (Full script from previous project) ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('space-canvas');
+        const ctx = canvas.getContext('2d');
+        let stars = [], blackHole, nebulas = [], sun, saturn, earth, mars, moon;
+        let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        function init() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; sun = { x: canvas.width * 0.9, y: canvas.height * 0.1, radius: 60, parallax: 0.1 }; blackHole = { x: canvas.width / 2, y: canvas.height / 2, radius: 40, angle: 0, parallax: 0.05 }; saturn = { x: canvas.width * 0.15, y: canvas.height * 0.2, radius: 30, parallax: 0.08 }; earth = { x: canvas.width * 0.8, y: canvas.height * 0.8, radius: 25, parallax: 0.06 }; mars = { x: canvas.width * 0.2, y: canvas.height * 0.75, radius: 20, parallax: 0.07 }; moon = { orbitRadius: 45, angle: 0, parallax: 0.06 }; stars = []; const starCount = window.innerWidth > 768 ? 500 : 250; for (let i = 0; i < starCount; i++) { stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, radius: Math.random() * 1.5, alpha: Math.random() * 0.5 + 0.5, twinkle: Math.random() * 0.02, parallax: Math.random() * 0.04 + 0.01 }); } nebulas = []; for(let i = 0; i < 3; i++) { nebulas.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, radius: Math.random() * 200 + 150, color: `rgba(${100 + Math.random() * 50}, ${50 + Math.random() * 50}, ${150 + Math.random() * 50}, 0.1)`, speedX: (Math.random() - 0.5) * 0.1, speedY: (Math.random() - 0.5) * 0.1 }); } }
+        function drawSun(x, y) { ctx.save(); ctx.translate(x, y); const g = ctx.createRadialGradient(0, 0, sun.radius * 0.8, 0, 0, sun.radius * 2.5); g.addColorStop(0, 'rgba(255, 255, 220, 1)'); g.addColorStop(0.2, 'rgba(255, 220, 100, 0.5)'); g.addColorStop(0.5, 'rgba(255, 180, 50, 0.1)'); g.addColorStop(1, 'rgba(255, 150, 0, 0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, sun.radius * 2.5, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+        function drawSaturn(x, y) { ctx.save(); ctx.translate(x,y); ctx.strokeStyle='rgba(210,180,140,0.7)'; ctx.lineWidth=4; ctx.beginPath(); ctx.ellipse(0,0,saturn.radius*2.2,saturn.radius*0.8,-0.4,0,Math.PI*2); ctx.stroke(); ctx.fillStyle='#E3B971'; ctx.beginPath(); ctx.arc(0,0,saturn.radius,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+        function drawEarth(x, y) { ctx.save(); ctx.translate(x,y); const g=ctx.createRadialGradient(0,0,earth.radius,0,0,earth.radius*1.5); g.addColorStop(0,'rgba(100,150,255,0.3)'); g.addColorStop(1,'rgba(100,150,255,0)'); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,earth.radius*1.5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#4D94DB'; ctx.beginPath(); ctx.arc(0,0,earth.radius,0,Math.PI*2); ctx.fill(); ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.ellipse(-5,-10,20,8,0.5,0,Math.PI*2); ctx.ellipse(10,5,18,6,-0.3,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+        function drawMars(x, y) { ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#C1440E'; ctx.beginPath(); ctx.arc(0, 0, mars.radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'; ctx.beginPath(); ctx.arc(0, -mars.radius + 3, 5, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+        function drawMoon(x, y) { ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#B0B0B0'; ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+        function draw() { ctx.clearRect(0, 0, canvas.width, canvas.height); const pX = (mouse.x - canvas.width / 2) * 0.5, pY = (mouse.y - canvas.height / 2) * 0.5; nebulas.forEach(n => { n.x += n.speedX; n.y += n.speedY; if(n.x+n.radius<0) n.x=canvas.width+n.radius; if(n.x-n.radius>canvas.width) n.x=-n.radius; if(n.y+n.radius<0) n.y=canvas.height+n.radius; if(n.y-n.radius>canvas.height) n.y=-n.radius; const g=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.radius); g.addColorStop(0,n.color); g.addColorStop(1,'rgba(0,0,0,0)'); ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height); }); stars.forEach(s => { const sx=s.x+pX*s.parallax, sy=s.y+pY*s.parallax; s.alpha+=s.twinkle; if(s.alpha>1||s.alpha<0.5) s.twinkle=-s.twinkle; ctx.globalAlpha=s.alpha; ctx.fillStyle='white'; ctx.beginPath(); ctx.arc(sx,sy,s.radius,0,Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1; const sunX = sun.x+pX*sun.parallax, sunY = sun.y+pY*sun.parallax; const saturnX = saturn.x+pX*saturn.parallax, saturnY = saturn.y+pY*saturn.parallax; const earthX = earth.x+pX*earth.parallax, earthY = earth.y+pY*earth.parallax; const marsX = mars.x+pX*mars.parallax, marsY = mars.y+pY*mars.parallax; const bhX = blackHole.x+pX*blackHole.parallax, bhY = blackHole.y+pY*blackHole.parallax; moon.angle += 0.01; const moonX = earthX + moon.orbitRadius * Math.cos(moon.angle), moonY = earthY + moon.orbitRadius * Math.sin(moon.angle); drawSun(sunX, sunY); drawSaturn(saturnX, saturnY); drawMars(marsX, marsY); drawEarth(earthX, earthY); drawMoon(moonX, moonY); ctx.save(); ctx.translate(bhX, bhY); ctx.fillStyle='black'; ctx.beginPath(); ctx.arc(0,0,blackHole.radius,0,Math.PI*2); ctx.fill(); ctx.rotate(blackHole.angle); const dG=ctx.createLinearGradient(-blackHole.radius*2.5,0,blackHole.radius*2.5,0); dG.addColorStop(0,'rgba(255,200,0,0.8)'); dG.addColorStop(0.5,'rgba(160,60,255,0.9)'); dG.addColorStop(1,'rgba(255,200,0,0.8)'); ctx.strokeStyle=dG; ctx.lineWidth=3; ctx.shadowColor='rgba(160,60,255,0.7)'; ctx.shadowBlur=15; ctx.beginPath(); ctx.ellipse(0,0,blackHole.radius*2,blackHole.radius*0.7,0,0,Math.PI*2); ctx.stroke(); ctx.lineWidth=1.5; ctx.shadowBlur=5; ctx.beginPath(); ctx.ellipse(0,0,blackHole.radius*1.5,blackHole.radius*0.5,0,0,Math.PI*2); ctx.stroke(); ctx.restore(); blackHole.angle += 0.003; requestAnimationFrame(draw); }
+        window.addEventListener('resize', init);
+        window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+        init();
+        draw();
+    });
+  </script>
+</body>
+</html>
