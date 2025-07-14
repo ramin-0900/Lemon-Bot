@@ -23,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BOT_SCRIPT_PATH = "main.py"
+BOT_SCRIPT_PATH = "bot.py"
 PID_FILE = "bot.pid"
 
 def is_bot_running():
