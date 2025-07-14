@@ -15,4 +15,12 @@ pip install -r requirements.txt
 ```
 ## how to use
 
-****
+**run dashboard and go to**
+```
+http://localhost:8000/static/api-key.html
+```
+**enter your bot token and save then go to**
+```
+http://localhost:8000/static/index.html
+```
+
